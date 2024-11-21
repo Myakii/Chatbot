@@ -1,37 +1,3 @@
-# import os
-# import requests
-# import PyPDF2
-# from auth.auth import download_file_from_drive
-
-# # Lire le fichier PDF
-# def read_pdf(file_path):
-#     with open(file_path, 'rb') as file:
-#         reader = PyPDF2.PdfReader(file)
-#         text = ''
-#         for page in range(len(reader.pages)):
-#             text += reader.pages[page].extract_text()
-#     return text
-
-# # Fonction pour interroger Ollama avec un prompt
-# def ask_ollama(prompt):
-#     url = "http://localhost:11434/api/generate"  # Assure-toi que Ollama est démarré
-#     headers = {"Content-Type": "application/json"}
-#     payload = {"model": "llama2", "prompt": prompt}
-
-#     response = requests.post(url, json=payload, headers=headers)
-#     return response.json().get('choices')[0].get('text')
-
-# # Extraire le contenu du PDF
-# pdf_content = read_pdf(file_path)
-
-# # Crée un prompt basé sur la question et le contenu du PDF
-# question = "Comment vivre en appartement avec un chien?"
-# prompt = f"{question}\nVoici le contenu du fichier PDF sur la question :\n{pdf_content}"
-
-# # Interroger Ollama
-# response = ask_ollama(prompt)
-# print("Réponse d'Ollama : ", response)
-
 import os
 import io
 import PyPDF2
@@ -39,7 +5,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from auth.auth import download_file_from_drive
+import requests
 
 # Variables globales
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -47,19 +13,16 @@ TOKEN_FILE = 'token.json'  # Token de session
 CREDENTIALS_FILE = 'credentials.json'  # Fichier client OAuth 2.0
 DRIVE_API = None
 
-# ID du fichier Google Drive (assure-toi de le remplacer par l'ID réel du PDF)
-file_id = '15eS8loNmhSomZisKxET1fPOUUl5OAVsh?usp=drive_link'
-file_path = 'vivre_en_appartement_avec_chien.pdf'
-
-# Télécharger le fichier PDF de Google Drive
-download_file_from_drive(file_id, file_path)
-
-def download_file_from_drive():
-    """Authentifie l'utilisateur avec OAuth 2.0 et récupère l'API Drive."""
+def authenticate_to_drive():
+    """Authentifie l'utilisateur avec OAuth 2.0 et initialise l'API Google Drive."""
+    global DRIVE_API
     creds = None
+
+    # Chargement des credentials existants
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     
+    # Si les credentials sont invalides ou inexistants, exécute le flux OAuth
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -71,73 +34,109 @@ def download_file_from_drive():
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
     
-    global DRIVE_API
     DRIVE_API = build('drive', 'v3', credentials=creds)
+    print("Authentification réussie.")
 
 def search_pdf_in_drive(query):
-    """Recherche un fichier PDF dans Google Drive basé sur la requête utilisateur."""
-    results = DRIVE_API.files().list(q=f"name contains '{query}' and mimeType='application/pdf'",
-                                      fields="files(id, name)").execute()
+    """Recherche un fichier PDF dans Google Drive basé sur une requête."""
+    if not DRIVE_API:
+        raise RuntimeError("L'API Drive n'est pas initialisée. Veuillez exécuter `authenticate_to_drive`.")
+    
+    results = DRIVE_API.files().list(
+        q=f"name contains '{query}' and mimeType='application/pdf'",
+        fields="files(id, name)"
+    ).execute()
     files = results.get('files', [])
     if not files:
+        print("Aucun fichier trouvé.")
         return None
     return files[0]  # Retourne le premier fichier trouvé
 
-def download_pdf(file_id, file_name):
-    """Télécharge le fichier PDF à partir de Google Drive."""
+def download_file_from_drive(file_id, file_path):
+    """Télécharge un fichier PDF depuis Google Drive."""
+    if not DRIVE_API:
+        raise RuntimeError("L'API Drive n'est pas initialisée. Veuillez exécuter `authenticate_to_drive`.")
+    
     request = DRIVE_API.files().get_media(fileId=file_id)
-    fh = io.FileIO(file_name, 'wb')
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while done is False:
-        status, done = downloader.next_chunk()
-    print(f"Fichier {file_name} téléchargé.")
+    with open(file_path, 'wb') as f:
+        downloader = MediaIoBaseDownload(f, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            print(f"Téléchargement en cours : {int(status.progress() * 100)}%")
+    print(f"Fichier téléchargé avec succès : {file_path}")
 
 def extract_text_from_pdf(file_path):
-    """Extrait le texte d'un PDF donné."""
-    with open(file_path, 'rb') as f:
-        reader = PyPDF2.PdfReader(f)
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text()
-    return text
+    """Extrait le texte d'un fichier PDF."""
+    try:
+        with open(file_path, 'rb') as f:
+            reader = PyPDF2.PdfReader(f)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text()
+        return text
+    except Exception as e:
+        print(f"Erreur lors de la lecture du fichier PDF : {e}")
+        return ""
 
-def send_text_to_ollama(text):
-    """Envoie le texte à Ollama pour analyse et renvoie la réponse."""
-    # Remplace par la logique d'intégration Ollama
-    # Par exemple : appel HTTP à Ollama API
-    # Implémente ici la logique pour poser la question à Ollama et obtenir une réponse
-    response = ollama_query(text)  # Logique d'appel à Ollama (exemple)
-    return response
+def save_text_to_file(text, txt_file_path):
+    """Sauvegarde le texte extrait dans un fichier .txt."""
+    try:
+        with open(txt_file_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        print(f"Texte extrait sauvegardé dans : {txt_file_path}")
+    except Exception as e:
+        print(f"Erreur lors de la sauvegarde du fichier texte : {e}")
 
-def list_files_from_drive(service):
-    results = service.files().list(
-        pageSize=10, fields="nextPageToken, files(id, name)"
-    ).execute()
-    items = results.get('files', [])
+def ask_ollama(prompt):
+    """Interroge Ollama avec un prompt spécifique."""
+    url = "http://localhost:11434/api/generate"  # Assure-toi que Ollama est démarré
+    headers = {"Content-Type": "application/json"}
+    payload = {"model": "llama2", "prompt": prompt}
 
-    if not items:
-        print("Aucun fichier trouvé.")
-    else:
-        print("Fichiers dans le Drive :")
-        for item in items:
-            print(f"Nom : {item['name']}, ID : {item['id']}")
-
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json().get('choices')[0].get('text')
+    except requests.RequestException as e:
+        print(f"Erreur lors de l'interrogation d'Ollama : {e}")
+        return "Erreur lors de la génération de la réponse."
 
 def main():
     """Exécution principale."""
-    download_file_from_drive()  # Authentifie l'utilisateur
-    query = "vivre en appartement avec un chien"  # Exemple de question de l'utilisateur
-    file = search_pdf_in_drive(query)  # Recherche un fichier correspondant
-    if file:
-        print(f"Fichier trouvé: {file['name']}")
-        download_pdf(file['id'], file['name'])  # Télécharge le PDF
-        text = extract_text_from_pdf(file['name'])  # Extrait le texte du PDF
-        print(f"Texte extrait du fichier: {text[:200]}...")  # Affiche une partie du texte extrait
-        response = send_text_to_ollama(text)  # Envoie à Ollama pour réponse
-        print(f"Réponse d'Ollama: {response}")
-    else:
-        print("Aucun fichier trouvé.")
+    # Authentification à Google Drive
+    authenticate_to_drive()
+
+    # Recherche du fichier PDF
+    query = "vivre en appartement avec un chien"
+    file_info = search_pdf_in_drive(query)
+
+    if not file_info:
+        print("Aucun fichier correspondant n'a été trouvé.")
+        return
+
+    print(f"Fichier trouvé : {file_info['name']} (ID : {file_info['id']})")
+    
+    # Téléchargement du fichier
+    file_path = file_info['name']
+    download_file_from_drive(file_info['id'], file_path)
+
+    # Extraction du texte du PDF
+    pdf_text = extract_text_from_pdf(file_path)
+    if not pdf_text:
+        print("Aucun texte n'a pu être extrait du fichier PDF.")
+        return
+
+    # Sauvegarder le texte en tant que fichier .txt
+    txt_file_path = os.path.splitext(file_path)[0] + '.txt'
+    save_text_to_file(pdf_text, txt_file_path)
+
+    # Interrogation d'Ollama
+    question = "Comment vivre en appartement avec un chien ?"
+    prompt = f"{question}\nVoici le contenu du fichier PDF :\n{pdf_text[:3000]}"  # Limite à 3000 caractères pour éviter les dépassements
+    response = ask_ollama(prompt)
+
+    print("Réponse d'Ollama :", response)
 
 if __name__ == '__main__':
     main()
