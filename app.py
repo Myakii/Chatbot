@@ -1,26 +1,40 @@
-from auth.auth import authenticate_google_drive
-from utils.download import download_file
-from utils.text_extraction import extract_text_from_pdf
-from models.rag_model import initialize_model, generate_response
+import os
+import requests
+import PyPDF2
+from auth.auth import download_file_from_drive
 
-def main():
-    # Authentifie l'utilisateur et obtient le service Google Drive
-    service = authenticate_google_drive()
-    
-    # Exemple de téléchargement d'un fichier depuis Google Drive
-    file_id = '1V7yXvWqD5eB6V6Lg8wP7tPm5RQ6k1zTx'  # Remplace par un ID de fichier réel
-    download_file(file_id, service)
+# ID du fichier Google Drive (assure-toi de le remplacer par l'ID réel du PDF)
+file_id = 'votre_fichier_id_google_drive'
+file_path = 'Races_de_chiens_pour_appartement.pdf'
 
-    # Extraire le texte du fichier PDF téléchargé
-    text = extract_text_from_pdf('downloaded_file.pdf')
-    
-    # Initialiser et utiliser le modèle RAG pour générer une réponse basée sur le texte extrait
-    model = initialize_model()
-    prompt = f"Peux-tu me résumer ce texte ? {text}"
-    response = generate_response(prompt, model)
-    
-    # Afficher la réponse générée
-    print(response)
+# Télécharger le fichier PDF de Google Drive
+download_file_from_drive(file_id, file_path)
 
-if __name__ == '__main__':
-    main()
+# Lire le fichier PDF
+def read_pdf(file_path):
+    with open(file_path, 'rb') as file:
+        reader = PyPDF2.PdfReader(file)
+        text = ''
+        for page in range(len(reader.pages)):
+            text += reader.pages[page].extract_text()
+    return text
+
+# Fonction pour interroger Ollama avec un prompt
+def ask_ollama(prompt):
+    url = "http://localhost:11434/api/generate"  # Assure-toi que Ollama est démarré
+    headers = {"Content-Type": "application/json"}
+    payload = {"model": "llama2", "prompt": prompt}
+
+    response = requests.post(url, json=payload, headers=headers)
+    return response.json().get('choices')[0].get('text')
+
+# Extraire le contenu du PDF
+pdf_content = read_pdf(file_path)
+
+# Crée un prompt basé sur la question et le contenu du PDF
+question = "Comment vivre en appartement avec un chien?"
+prompt = f"{question}\nVoici le contenu du fichier PDF sur la question :\n{pdf_content}"
+
+# Interroger Ollama
+response = ask_ollama(prompt)
+print("Réponse d'Ollama : ", response)
