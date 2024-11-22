@@ -1,3 +1,4 @@
+import subprocess
 import os
 import io
 import PyPDF2
@@ -46,8 +47,8 @@ def search_pdf_in_drive(query):
     for file in files:
         file_name = file['name'].lower()
         if all(keyword in file_name for keyword in keywords):  # Vérifie si tous les mots-clés sont présents
-            return file  # Retourne le premier fichier correspondant
-    return None  # Aucun fichier correspondant
+            return file  
+    return None 
 
 def download_pdf(file_id, file_name):
     """Télécharge le fichier PDF à partir de Google Drive."""
@@ -69,18 +70,52 @@ def extract_text_from_pdf(file_path):
             text += page.extract_text() or ""  # Gestion des pages sans texte
     return text
 
+def ask_ollama(question, context):
+    """Envoie une question au modèle LLM en local via la ligne de commande."""
+    command = f"ollama run llama3.2 --question \"{question}\" --context \"{context}\" --temperature 0.7"
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    return result.stdout
+
+# def main():
+#     authenticate_drive()
+#     query = input("Entrez le nom ou mot-clé du PDF à rechercher : ")
+#     file = search_pdf_in_drive(query)
+#     if file:
+#         print(f"Fichier sélectionné : {file['name']}")
+#         download_pdf(file['id'], file['name'])
+#         text = extract_text_from_pdf(file['name'])
+#         print("\n--- Contenu extrait du PDF ---\n")
+#         print(text)
+        
+#         # Interroger le modèle LLM avec le texte extrait comme contexte
+#         question = input("Posez une question sur le contenu du PDF : ")
+#         response = ask_ollama(question, text)
+#         print("\n--- Réponse du modèle ---")
+#         print(response)  # Affiche la réponse générée par le modèle
+#     else:
+#         print("Aucun fichier correspondant trouvé ou aucune sélection valide.")
+
 def main():
-    authenticate_drive()  # Authentification
+    authenticate_drive()
     query = input("Entrez le nom ou mot-clé du PDF à rechercher : ")
-    file = search_pdf_in_drive(query)  # Recherche
+    file = search_pdf_in_drive(query)
     if file:
         print(f"Fichier sélectionné : {file['name']}")
-        download_pdf(file['id'], file['name'])  # Téléchargement
-        text = extract_text_from_pdf(file['name'])  # Extraction du texte
+        download_pdf(file['id'], file['name'])
+        text = extract_text_from_pdf(file['name'])
         print("\n--- Contenu extrait du PDF ---\n")
-        print(text)  # Affichage du texte dans le terminal
+        print(text)
+        
+        while True:  # Permet de poser plusieurs questions à la suite
+            question = input("Posez une question sur le contenu du PDF (ou tapez 'exit' pour quitter) : ")
+            if question.lower() == 'exit':
+                break
+            response = ask_ollama(question, text)  # Demander au modèle avec le contexte actuel
+            print("\n--- Réponse du modèle ---")
+            print(response)  # Affiche la réponse générée par le modèle
     else:
         print("Aucun fichier correspondant trouvé ou aucune sélection valide.")
+
 
 if __name__ == '__main__':
     main()
