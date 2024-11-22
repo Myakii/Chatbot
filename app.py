@@ -1,6 +1,5 @@
-import subprocess
+from fuzzywuzzy import fuzz
 import os
-import io
 import PyPDF2
 from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.discovery import build
@@ -70,30 +69,16 @@ def extract_text_from_pdf(file_path):
             text += page.extract_text() or ""  # Gestion des pages sans texte
     return text
 
-def ask_ollama(question, context):
-    """Envoie une question au modèle LLM en local via la ligne de commande."""
-    command = f"ollama run llama3.2 --question \"{question}\" --context \"{context}\" --temperature 0.7"
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    return result.stdout
-
-# def main():
-#     authenticate_drive()
-#     query = input("Entrez le nom ou mot-clé du PDF à rechercher : ")
-#     file = search_pdf_in_drive(query)
-#     if file:
-#         print(f"Fichier sélectionné : {file['name']}")
-#         download_pdf(file['id'], file['name'])
-#         text = extract_text_from_pdf(file['name'])
-#         print("\n--- Contenu extrait du PDF ---\n")
-#         print(text)
-        
-#         # Interroger le modèle LLM avec le texte extrait comme contexte
-#         question = input("Posez une question sur le contenu du PDF : ")
-#         response = ask_ollama(question, text)
-#         print("\n--- Réponse du modèle ---")
-#         print(response)  # Affiche la réponse générée par le modèle
-#     else:
-#         print("Aucun fichier correspondant trouvé ou aucune sélection valide.")
+def fuzzy_search(text, query):
+    """Recherche floue pour trouver les termes pertinents dans le texte."""
+    best_match = None
+    highest_score = 0
+    for word in text.split():
+        score = fuzz.partial_ratio(query.lower(), word.lower())
+        if score > highest_score:
+            highest_score = score
+            best_match = word
+    return best_match, highest_score
 
 def main():
     authenticate_drive()
@@ -110,12 +95,18 @@ def main():
             question = input("Posez une question sur le contenu du PDF (ou tapez 'exit' pour quitter) : ")
             if question.lower() == 'exit':
                 break
-            response = ask_ollama(question, text)  # Demander au modèle avec le contexte actuel
-            print("\n--- Réponse du modèle ---")
-            print(response)  # Affiche la réponse générée par le modèle
+            
+            best_match, score = fuzzy_search(text, question)
+            if best_match:
+                print(f"\n--- Réponse ---")
+                print(f"Le mot le plus proche de votre question est '{best_match}' avec un score de {score}%.\n")
+                start = text.lower().find(best_match.lower())
+                snippet = text[max(0, start - 100):start + len(best_match) + 100]  # Extraire un extrait autour du mot
+                print(snippet)
+            else:
+                print("Aucun mot-clé pertinent trouvé dans le texte.")
     else:
         print("Aucun fichier correspondant trouvé ou aucune sélection valide.")
-
 
 if __name__ == '__main__':
     main()
