@@ -69,15 +69,17 @@ def extract_text_from_pdf(file_path):
             text += page.extract_text() or ""  # Gestion des pages sans texte
     return text
 
-def fuzzy_search(text, query):
-    """Recherche floue pour trouver les termes pertinents dans le texte."""
-    best_match = None
+def fuzzy_search_text(text, query):
+    """Recherche floue pour trouver des phrases ou des termes pertinents dans le texte."""
+    # Divisez le texte en phrases
+    sentences = text.split(".")  # Diviser par points pour séparer les phrases
+    best_match = ""
     highest_score = 0
-    for word in text.split():
-        score = fuzz.partial_ratio(query.lower(), word.lower())
+    for sentence in sentences:
+        score = fuzz.partial_ratio(query.lower(), sentence.lower())  # Compare chaque phrase avec la question
         if score > highest_score:
             highest_score = score
-            best_match = word
+            best_match = sentence.strip()
     return best_match, highest_score
 
 def main():
@@ -96,15 +98,14 @@ def main():
             if question.lower() == 'exit':
                 break
             
-            best_match, score = fuzzy_search(text, question)
+            # Recherche de la meilleure phrase correspondant à la question
+            best_match, score = fuzzy_search_text(text, question)
             if best_match:
                 print(f"\n--- Réponse ---")
-                print(f"Le mot le plus proche de votre question est '{best_match}' avec un score de {score}%.\n")
-                start = text.lower().find(best_match.lower())
-                snippet = text[max(0, start - 100):start + len(best_match) + 100]  # Extraire un extrait autour du mot
-                print(snippet)
+                print(f"Meilleure correspondance : {best_match}")
+                print(f"Score de correspondance : {score}%\n")
             else:
-                print("Aucun mot-clé pertinent trouvé dans le texte.")
+                print("Aucune correspondance trouvée dans le texte.")
     else:
         print("Aucun fichier correspondant trouvé ou aucune sélection valide.")
 
