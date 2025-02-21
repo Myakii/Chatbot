@@ -25,9 +25,9 @@ def authenticate_drive():
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
         except Exception as e:
             print("Erreur avec le token existant :", e)
-            creds = None  # Force la ré-authentification
+            creds = None  
 
-    if not creds or not creds.valid:  # Vérifie si les credentials sont valides
+    if not creds or not creds.valid: 
         flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
         creds = flow.run_local_server(port=8080)
         with open(TOKEN_FILE, 'w') as token:
@@ -36,17 +36,45 @@ def authenticate_drive():
     DRIVE_API = build('drive', 'v3', credentials=creds)
 
 def search_pdf_in_drive(query):
-    """Recherche un fichier PDF dans Google Drive basé sur la requête utilisateur."""
-    keywords = query.lower().split()  # Divise le prompt en mots-clés
+    """Recherche un fichier PDF dans Google Drive, en explorant aussi les dossiers si nécessaire."""
+    keywords = query.lower().split()  
+
+    # 1️⃣ Cherche les fichiers PDF directement
     results = DRIVE_API.files().list(
         q="mimeType='application/pdf'",
-        fields="files(id, name)").execute()
+        fields="files(id, name, parents)"
+    ).execute()
     
     files = results.get('files', [])
+    
     for file in files:
         file_name = file['name'].lower()
-        if all(keyword in file_name for keyword in keywords):  # Vérifie si tous les mots-clés sont présents
+        if all(keyword in file_name for keyword in keywords):
             return file  
+
+    # 2️⃣ Si aucun fichier trouvé, cherche dans les dossiers
+    folder_results = DRIVE_API.files().list(
+        q="mimeType='application/vnd.google-apps.folder'",
+        fields="files(id, name)"
+    ).execute()
+    
+    folders = folder_results.get('files', [])
+    
+    for folder in folders:
+        folder_id = folder['id']
+        folder_name = folder['name'].lower()
+        
+        # Vérifie si le dossier correspond aux mots-clés
+        if all(keyword in folder_name for keyword in keywords):
+            sub_results = DRIVE_API.files().list(
+                q=f"'{folder_id}' in parents and mimeType='application/pdf'",
+                fields="files(id, name)"
+            ).execute()
+            
+            sub_files = sub_results.get('files', [])
+            if sub_files:
+                return sub_files[0] 
+
     return None 
 
 def download_pdf(file_id, file_name):
@@ -66,17 +94,16 @@ def extract_text_from_pdf(file_path):
         reader = PyPDF2.PdfReader(f)
         text = ""
         for page in reader.pages:
-            text += page.extract_text() or ""  # Gestion des pages sans texte
+            text += page.extract_text() or "" 
     return text
 
 def fuzzy_search_text(text, query):
     """Recherche floue pour trouver des phrases ou des termes pertinents dans le texte."""
-    # Divisez le texte en phrases
-    sentences = text.split(".")  # Diviser par points pour séparer les phrases
+    sentences = text.split(".")  
     best_match = ""
     highest_score = 0
     for sentence in sentences:
-        score = fuzz.partial_ratio(query.lower(), sentence.lower())  # Compare chaque phrase avec la question
+        score = fuzz.partial_ratio(query.lower(), sentence.lower()) 
         if score > highest_score:
             highest_score = score
             best_match = sentence.strip()
@@ -93,12 +120,11 @@ def main():
         print("\n--- Contenu extrait du PDF ---\n")
         print(text)
         
-        while True:  # Permet de poser plusieurs questions à la suite
+        while True:
             question = input("Posez une question sur le contenu du PDF (ou tapez 'exit' pour quitter) : ")
             if question.lower() == 'exit':
                 break
             
-            # Recherche de la meilleure phrase correspondant à la question
             best_match, score = fuzzy_search_text(text, question)
             if best_match:
                 print(f"\n--- Réponse ---")
