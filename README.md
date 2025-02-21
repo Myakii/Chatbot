@@ -1,4 +1,4 @@
-# Chatbot pour la Cohabitation en Appartement avec un Chien
+# Chatbot pour la Cohabitation en Appartement avec un Chien OU chercher un client ou une voiture
 
 Ce projet est un chatbot interactif capable de communiquer avec Google Drive. Il trouve des fichiers PDF, les transforme en fichiers TXT, et les rend exploitables par une intelligence artificielle (IA). Le chatbot est spécialement conçu pour répondre à des questions concernant la cohabitation en appartement avec un chien.
 
